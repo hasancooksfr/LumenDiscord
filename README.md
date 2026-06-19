@@ -117,7 +117,7 @@ pip install -r requirements.txt
 Create a `.env` file:
 
 ```env
-DISCORD_TOKEN=YOUR_BOT_TOKEN
+BOT_TOKEN=YOUR_BOT_TOKEN
 ```
 
 ## Running the Bot
