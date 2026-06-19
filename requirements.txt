@@ -2,3 +2,4 @@ os
 discord
 random
 time
+aiohttp

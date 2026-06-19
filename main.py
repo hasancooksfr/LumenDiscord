@@ -6,8 +6,11 @@ from discord import app_commands
 from datetime import timedelta
 import random
 import time
+import aiohttp
 
 load_dotenv()
+
+afk_users = {}
 
 TOKEN = os.getenv("BOT_TOKEN")
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), help_command=None)
@@ -51,6 +54,9 @@ async def help(ctx, command: str = None):
 `!userinfo`
 `!serverinfo`
 `!hello`
+`!afk`
+`!avatar`
+`!banner`
             """,
             inline=False
         )
@@ -59,6 +65,10 @@ async def help(ctx, command: str = None):
             name="🎮 Fun",
             value="""
 `!coinflip`
+`!dice`
+`!randomnum`
+`!joke`
+`!fact`
             """
         )
 
@@ -146,6 +156,41 @@ async def help(ctx, command: str = None):
             "description": "Flip a coin!",
             "usage": "!coinflip <guess: Heads or Tails>",
             "aliases": ["cf"]
+        },
+        "afk": {
+            "description": "Enables and sets your afk status globally!",
+            "usage": "!afk <reason>",
+            "aliases": []
+        },
+        "avatar": {
+            "description": "Displays the avatar of user",
+            "usage": "!avatar <@user>",
+            "aliases": ["av", "pfp"]
+        },
+        "banner": {
+            "description": "Displays the avatar of user",
+            "usage": "!banner <@user>",
+            "aliases": []
+        },
+        "dice": {
+            "description": "Rolls a dice and displays the result",
+            "usage": "!dice <sides>",
+            "aliases": []
+        },
+        "randomnum": {
+            "description": "Chooses a random number between user defined limits and displays the result",
+            "usage": "!randomnum [minimum] [maximum]",
+            "aliases": ["rn", "random"]
+        },
+        "joke": {
+            "description": "Tells you a funny joke",
+            "usage": "!joke",
+            "aliases": []
+        },
+        "fact": {
+            "description": "Tells you a fun fact",
+            "usage": "!fact",
+            "aliases": []
         }
     }
 
@@ -156,6 +201,7 @@ async def help(ctx, command: str = None):
     
     embed = discord.Embed(
         title=f"📖 Command: {command}",
+        description="`- [] = required argument`\n`- <> = optional argument`",
         color=discord.Color.green(),
         timestamp=discord.utils.utcnow()
     )
@@ -308,6 +354,70 @@ async def serverinfo(ctx):
         icon_url=ctx.author.display_avatar.url
     )
 
+    await ctx.reply(embed=embed)
+
+@bot.command(name="afk")
+async def afk(ctx, *, reason="AFK"):
+    afk_users[ctx.author.id] = reason
+
+    embed = discord.Embed(
+        title="💤 AFK Enabled",
+        description=f"Reason: **{reason}**",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    await ctx.reply(embed=embed)
+
+@bot.command(name="avatar", aliases=["av", "pfp"])
+async def avatar(ctx, member: discord.Member = None):
+    member = member or ctx.author
+
+    embed= discord.Embed(
+        title=f"{member.display_name}'s Avatar",
+        color=discord.Color.blurple(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_image(
+        url=member.display_avatar.url
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    await ctx.reply(embed=embed)
+
+@bot.command(name="banner")
+async def banner(ctx, member: discord.Member = None):
+    member = member or ctx.author
+
+    user = await bot.fetch_user(member.id)
+
+    if not user.banner:
+
+        embed = discord.Embed(
+            title="❌ No Banner Found",
+            description=f"{member.mention} does not have a profile banner.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    embed = discord.Embed(
+        title=f"{member.display_name}'s Banner",
+        color=discord.Color.blurple()
+    )
+    embed.set_image(
+        url=user.banner.url
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
     await ctx.reply(embed=embed)
 
 # -- MODERATION --
@@ -876,6 +986,106 @@ async def coinflip(ctx, guess: str = "heads"):
 
     await ctx.reply(embed=embed)
 
+@bot.command(name="dice")
+async def dice(ctx, sides: int = 6):
+
+    if sides < 2:
+        return await ctx.reply(
+            embed=discord.Embed(
+                description="❌ Dice must have at least 2 sides.",
+                color=discord.Color.red()
+            )
+        )
+
+    result = random.randint(1, sides)
+
+    embed = discord.Embed(
+        title="🎲 Dice Roll",
+        description=f"You rolled **{result}**",
+        color=0xFFFFFF
+    )
+    embed.set_footer(
+        text=f"Rolled by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    await ctx.reply(embed=embed)
+
+@bot.command(name="randomnum", aliases=["rn", "random"])
+async def randomnum(ctx, minimum: int = None, maximum: int = None):
+    if minimum is None or maximum is None:
+        return await ctx.reply(
+            embed=discord.Embed(
+                title="❌ Invalid Command Usage",
+                description=f"Usage:\n!{ctx.invoked_with} [minimum] [maximum]",
+                color=discord.Color.red()
+            )
+        )
+
+    if minimum >= maximum:
+        return await ctx.reply(
+            embed=discord.Embed(
+                description="❌ Minimum must be smaller than Maximum",
+                color=discord.Color.red()
+            )
+        )
+    
+    number = random.randint(minimum, maximum)
+
+    embed = discord.Embed(
+        title="🎲 Random Number",
+        description=f"Generated: **{number}**",
+        color=0xFFFFFF
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url= ctx.author.display_avatar.url
+    )
+    await ctx.reply(embed=embed)
+
+@bot.command(name="joke")
+async def joke(ctx):
+
+    async with aiohttp.ClientSession() as session:
+
+        async with session.get(
+            "https://v2.jokeapi.dev/joke/Any?safe-mode&type=single"
+        ) as response:
+            data = await response.json()
+
+    embed = discord.Embed(
+        title="Random Joke",
+        description=data["joke"],
+        color=discord.Color.orange()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    await ctx.send(embed=embed)
+
+@bot.command(name="fact")
+async def fact(ctx):
+    async with aiohttp.ClientSession() as session:
+
+        async with session.get(
+            "https://uselessfacts.jsph.pl/api/v2/facts/random"
+        ) as response:
+
+            data = await response.json()
+
+    embed= discord.Embed(
+        title="🧠 Random Fact",
+        description=data['text'],
+        color=discord.Color.purple()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    await ctx.reply(embed=embed)
+
 
 # ----- SLASH COMMANDS FROM HERE -----
 
@@ -917,6 +1127,9 @@ async def help_slash(interaction: discord.Interaction, command: str = None):
 `/userinfo`
 `/serverinfo`
 `/hello`
+`/afk`
+`/avatar`
+`/banner`
             """,
             inline=False
         )
@@ -925,6 +1138,10 @@ async def help_slash(interaction: discord.Interaction, command: str = None):
             name="🎮 Fun",
             value="""
 `/coinflip`
+`/dice`
+`/randomnum`
+`/joke`
+`/fact`
             """,
             inline=False
         )
@@ -998,6 +1215,34 @@ async def help_slash(interaction: discord.Interaction, command: str = None):
         "coinflip": {
             "description": "Flip a coin!",
             "usage": "/coinflip <guess: Heads or Tails>"
+        },
+        "afk": {
+            "description": "Enables and sets your afk status globally!",
+            "usage": "/afk <reason>"
+        },
+        "avatar": {
+            "description": "Displays the avatar of user",
+            "usage": "/avatar <@user>"
+        },
+        "banner": {
+            "description": "Displays the avatar of user",
+            "usage": "/banner <@user>"
+        },
+        "dice": {
+            "description": "Rolls a dice and displays the result",
+            "usage": "/dice <sides>"
+        },
+        "randomnum": {
+            "description": "Chooses a random number between user defined limits",
+            "usage": "/randomnum [minimum] [maximum]"
+        },
+        "joke": {
+            "description": "Tells you a funny joke",
+            "usage": "/joke"
+        },
+        "fact": {
+            "description": "Tells you a fun fact",
+            "usage": "/fact"
         }
     }
 
@@ -1008,6 +1253,7 @@ async def help_slash(interaction: discord.Interaction, command: str = None):
     
     embed = discord.Embed(
         title=f"📖 Command: {command}",
+        description="`- [] = required argument`\n`- <> = optional argument`",
         color=discord.Color.green(),
         timestamp=discord.utils.utcnow()
     )
@@ -1147,6 +1393,70 @@ async def serverinfo_slash(interaction: discord.Interaction):
     )
 
     await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="afk", description="Enable AFK mode")
+async def afk_slash(interaction: discord.Interaction, reason: str = "AFK"):
+    afk_users[interaction.user.id] = reason
+
+    embed= discord.Embed(
+        title="💤 AFK Enabled",
+        description=f"Reason: **{reason}**",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="avatar", description="Displays user's avatar")
+async def avatar_slash(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+    embed = discord.Embed(
+        title=f"{member.display_name}'s Avatar",
+        color=discord.Color.blurple(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_image(
+        url=member.display_avatar.url
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="banner", description="Displays user's banner")
+async def banner_slash(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+
+    user = await bot.fetch_user(member.id)
+
+    if not user.banner:
+
+        embed=discord.Embed(
+            title="❌ No Banner Found",
+            description=f"{member.mention} does not have a profile banner.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed)
+
+    embed= discord.Embed(
+        title=f"{member.display_name}'s Banner",
+        color=discord.Color.blurple()
+    )
+    embed.set_image(
+        url=user.banner.url
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
 
 # -- MODERATION --
 
@@ -1694,6 +2004,100 @@ async def coinflip_slash(interaction: discord.Interaction, guess: str = "Heads")
     await interaction.response.send(embed=embed)
     
 
+@bot.tree.command(name="dice", description="Roll a dice")
+async def dice_slash(interaction: discord.Interaction, sides: int = 6):
+
+    if sides < 2:
+        return await interaction.response.send_message(
+            embed=discord.Embed(
+                description="❌ Dice must have at least 2 sides.",
+                color=discord.Color.red()
+            ),
+            ephemeral=True
+        )
+
+    result = random.randint(1, sides)
+
+    embed= discord.Embed(
+        title="🎲 Dice Roll",
+        description=f"You rolled **{result}**",
+        color=0xFFFFFF
+    )
+
+    embed.set_footer(
+        text=f"Rolled by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="randomnum", description="Picks a random number")
+async def randomnum_slash(interaction: discord.Interaction, minimum: int, maximum: int):
+    if minimum >= maximum:
+        return await interaction.response.send_message(
+            embed=discord.Embed(
+                description="❌ Minimum must be smaller than Maximum",
+                color=discord.Color.red()
+            ),
+            ephemeral=True
+        )
+    
+    number = random.randint(minimum, maximum)
+
+    embed = discord.Embed(
+        title="🎲 Random Number",
+        description=f"Generated: **{number}**",
+        color=0xFFFFFF
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url= interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="joke", description="Generates a random joke")
+async def joke_slash(interaction: discord.Interaction):
+    
+    async with aiohttp.ClientSession() as session:
+        
+        async with session.get(
+            "https://v2.jokeapi.dev/joke/Any?safe-mode&type=single"
+        ) as response:
+            data = await response.json()
+
+
+    embed = discord.Embed(
+        title="Random Joke",
+        description=data["joke"],
+        color=discord.Color.orange()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bot.tree.command(name="fact", description="Generates a random fact")
+async def fact(interaction: discord.Interaction):
+    async with aiohttp.ClientSession() as session:
+
+        async with session.get(
+            "https://uselessfacts.jsph.pl/api/v2/facts/random"
+        ) as response:
+            data = await response.json()
+
+    embed= discord.Embed(
+        title="🧠 Random Fact",
+        description=data['text'],
+        color=discord.Color.purple()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+
 # ----- Error Handling -----
 @bot.event
 async def on_command_error(ctx, error):
@@ -1764,6 +2168,29 @@ async def on_app_command_error(interaction: discord.Interaction, error: app_comm
     
     else:
         print(error)
+
+# ----- ON MESSAGE EVENT -----
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    if message.author.id in afk_users:
+        del afk_users[message.author.id]
+
+        await message.channel.send(
+            f"Welcome back {message.author.mention}, your AFK has been removed."
+        )
+
+    await bot.process_commands(message)
+
+    for user in message.mentions:
+        if user.id in afk_users:
+            await message.channel.send(
+                f"💤 {user.display_name} is AFK: {afk_users[user.id]}"
+            )
+
 
 
 @bot.event
