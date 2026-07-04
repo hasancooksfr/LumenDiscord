@@ -1103,6 +1103,82 @@ async def fact(ctx):
     )
     await ctx.reply(embed=embed)
 
+# -- ECONOMY (BANK) --
+@bot.group(invoke_without_command=True)
+async def bank(ctx):
+    embed = discord.Embed(
+        title="Available Bank Commands",
+        description="`!bank create`\n`!bank balance`\n`!bank daily`",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    await ctx.reply(embed=embed)
+
+@bank.command()
+async def create(ctx):
+
+    user = economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if user:
+        embed = discord.Embed(
+            title="Account Already Exists",
+            description="You already own a bank account and cannot create another.",
+            color=discord.Color.red()
+        )
+        await ctx.reply(embed=embed)
+        return
+    
+    economy.insert_one({
+        "user_id": ctx.author.id,
+        "balance": 1000,
+        "created_at": int(time.time())
+    })
+
+    embed=discord.Embed(
+        title="🏦 | Account Created!",
+        description="Account has been successfully created!\nAs a welcome gift, we have added `1000` Coins to your bank balance.\nThank you for trusting us.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+
+    embed.set_footer(
+        text=f"Account Holder: {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    await ctx.reply(embed=embed)
+
+
+@bank.command()
+async def balance(ctx, member: discord.Member = None):
+    member = member or ctx.author
+
+    result = economy.find_one({
+        "user_id": member.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description=f"{member} does not have a bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    embed=discord.Embed(
+        title=f"💸 | {member}'s Balance",
+        description=f"{member} currently have `{result['balance']}` coins in account.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    await ctx.reply(embed=embed)
+        
 
 # ----- SLASH COMMANDS FROM HERE -----
 
@@ -2126,6 +2202,74 @@ async def fact(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed)
 
+# -- ECONOMY (BANK) --
+bank_sl = app_commands.Group(
+    name="bank",
+    description="Bank related commands"
+)
+
+@bank_sl.command(name="create", description="Creates a bank account!")
+async def create_sl(interaction: discord.Interaction):
+    user = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if user:
+        embed= discord.Embed(
+            title="Account Already Exists",
+            description="You already own a bank account and cannot create another",
+            color=discord.Color.red()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    economy.insert_one({
+        "user_id": interaction.user.id,
+        "balance": 1000,
+        "created_at": int(time.time())
+    })
+
+    embed = discord.Embed(
+        title="🏦 | Account Created!",
+        description="Account has been successfully created!\nAs a welcome gift, we have added `1000` Coins to your bank balance.\nThank you for trusting us.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Account Holder: {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bank_sl.command(name="balance", description="Check an user's account balance")
+async def balance_sl(interaction: discord.Interaction, member: discord.Member = None):
+    member = member or interaction.user
+
+    result = economy.find_one({
+        "user_id": member.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description=f"{member} does not have a bank account. Use `/bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    embed=discord.Embed(
+        title=f"💸 | {member}'s Balance",
+        description=f"{member} currently have `{result['balance']}` coins in account.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+bot.tree.add_command(bank_sl)
 
 # ----- Error Handling -----
 @bot.event
