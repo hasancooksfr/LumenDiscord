@@ -4,13 +4,18 @@ from dotenv import load_dotenv
 from discord.ext import commands
 from discord import app_commands
 from datetime import timedelta
+from pymongo import MongoClient
 import random
 import time
 import aiohttp
 
 load_dotenv()
 
-afk_users = {}
+client = MongoClient(os.getenv("MONGO_URI"))
+
+db = client['lumen']
+economy = db['economy']
+afkdb = db['afk']
 
 TOKEN = os.getenv("BOT_TOKEN")
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), help_command=None)
@@ -358,7 +363,19 @@ async def serverinfo(ctx):
 
 @bot.command(name="afk")
 async def afk(ctx, *, reason="AFK"):
-    afk_users[ctx.author.id] = reason
+    afkdb.update_one(
+        {
+            "user_id": ctx.author.id,
+            "guild_id": ctx.guild.id
+        },
+        {
+            "$set": {
+                "reason": reason,
+                "since": int(time.time())
+            }
+        },
+        upsert=True
+    )
 
     embed = discord.Embed(
         title="💤 AFK Enabled",
@@ -1396,7 +1413,19 @@ async def serverinfo_slash(interaction: discord.Interaction):
 
 @bot.tree.command(name="afk", description="Enable AFK mode")
 async def afk_slash(interaction: discord.Interaction, reason: str = "AFK"):
-    afk_users[interaction.user.id] = reason
+    afkdb.update_one(
+        {
+            "user_id": interaction.user.id,
+            "guild_id": interaction.guild.id
+        },
+        {
+            "$set": {
+                "reason": reason,
+                "since": int(time.time())
+            }
+        },
+        upsert=True
+    )
 
     embed= discord.Embed(
         title="💤 AFK Enabled",
@@ -2176,19 +2205,32 @@ async def on_message(message):
     if message.author.bot:
         return
 
-    if message.author.id in afk_users:
-        del afk_users[message.author.id]
+    result = afkdb.find_one({
+        "user_id": message.author.id,
+        "guild_id": message.guild.id,
+    })
+
+    if result:
+
+        afkdb.delete_one({
+            "_id": result["_id"]
+        })
 
         await message.channel.send(
-            f"Welcome back {message.author.mention}, your AFK has been removed."
+            f"Welcome back {message.author.mention}, your AFK has been removed. You have been AFK since <t:{result['since']}:R>."
         )
 
     await bot.process_commands(message)
 
     for user in message.mentions:
-        if user.id in afk_users:
+        data = afkdb.find_one({
+            "user_id": user.id,
+            "guild_id": message.guild.id
+        })
+
+        if data:
             await message.channel.send(
-                f"💤 {user.display_name} is AFK: {afk_users[user.id]}"
+                f"💤 {user.display_name} is AFK from <t:{data['since']}:R> for reason: **{data['reason']}**"
             )
 
 
