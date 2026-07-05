@@ -972,7 +972,7 @@ async def untimeout(ctx, member: discord.Member = None):
 # -- FUN --
 
 @bot.command(name="coinflip", aliases=["cf"])
-async def coinflip(ctx, guess: str = "heads"):
+async def coinflip(ctx, guess: str = "heads", amount: int = None):
     guess = guess.capitalize()
 
     if guess not in ["Heads", "Tails"]:
@@ -980,17 +980,67 @@ async def coinflip(ctx, guess: str = "heads"):
             "Invalid Choice\nChoose `Heads` or `Tails` only."
         )
 
-    result = random.choice(["Heads", "Tails"])
+    res = random.choice(["Heads", "Tails"])
     time.sleep(1)
 
-    won = guess == result
+    won = guess == res
 
+    if amount:
+        result = economy.find_one({
+            "user_id": ctx.author.id
+        })
+
+        if not result:
+            embed = discord.Embed(
+                title="Account Not Found!",
+                description=f"You don't have an active bank account. Use `!bank create` to open one.",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            return await ctx.reply(embed=embed)
+        
+        if result['balance'] < amount:
+            embed= discord.Embed(
+                title="Insufficent Balance",
+                description=f"You don't have enough balance in your account.\nPlease try again with a smaller amount.",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            return await ctx.reply(embed=embed)
+        
+        economy.update_one(
+            {
+                "user_id": ctx.author.id
+            },
+            {
+                "$inc": {
+                    "balance": (amount if won else -amount)
+                }
+            }
+        )
+        embed=discord.Embed(
+            title="🪙 Coin Flip",
+            description=(
+                f"Your Guess: **{guess}**\n"
+                f"Result: **{res}**\n\n"
+                f"{"🎉 You won and earned {amount}!" if won else f"❌ You lost {amount}."}"
+            ),
+            color=discord.Color.green() if won else discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(
+            text=f"Flipped by {ctx.author}",
+            icon_url=ctx.author.display_avatar.url
+        )
+
+        return await ctx.reply(embed=embed)
+            
 
     embed=discord.Embed(
         title="🪙 Coin Flip",
         description=(
             f"Your Guess: **{guess}**\n"
-            f"Result: **{result}**\n\n"
+            f"Result: **{res}**\n\n"
             f"{"🎉 You won!" if won else '❌ You lost!'}"
         ),
         color=discord.Color.green() if won else discord.Color.red(),
@@ -2131,7 +2181,7 @@ async def untimeout_slash(interaction: discord.Interaction, member: discord.Memb
 # -- FUN --
 
 @bot.tree.command(name="coinflip", description="Flip a coin")
-async def coinflip_slash(interaction: discord.Interaction, guess: str = "Heads"):
+async def coinflip_slash(interaction: discord.Interaction, guess: str = "Heads", amount: int = None):
     guess = guess.capitalize()
 
     if guess not in ["Heads", "Tails"]:
@@ -2140,17 +2190,67 @@ async def coinflip_slash(interaction: discord.Interaction, guess: str = "Heads")
             ephemeral=True
         )
 
-    result = random.choice(
+    res = random.choice(
         ["Heads", "Tails"]
     )
 
-    won = guess == result
+    won = guess == res
+
+    if amount:
+        result = economy.find_one({
+            "user_id": interaction.user.id
+        })
+
+        if not result:
+            embed= discord.Embed(
+                title="Account Not Found!",
+                description=f"You dont have an active bank account. Use `/bank create` to open one.",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        if result['balance'] < amount:
+            embed= discord.Embed(
+                title="Insufficent Balance",
+                description=f"You don't have enough balance in your account.\nPlease try again with a smaller amount.",
+                color=discord.Color.red(),
+                timestamp=discord.utils.utcnow()
+            )
+            return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+        economy.update_one(
+            {
+                "user_id": interaction.user.id
+            },
+            {
+                "$inc": {
+                    "balance": (amount if won else -amount)
+                }
+            }
+        )
+        
+        embed=discord.Embed(
+            title="🪙 Coin Flip",
+            description=(
+                f"Your Guess: **{guess}**\n"
+                f"Result: **{res}**\n\n"
+                f"{f"🎉 You won and earned {amount}!" if won else f"❌ You lost {amount}."}"
+            ),
+            color=discord.Color.green() if won else discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(
+            text=f"Flipped by {interaction.user}",
+            icon_url=interaction.user.display_avatar.url
+        )
+        return await interaction.response.send_message(embed=embed)
 
     embed= discord.Embed(
         title="🪙 Coin Flip",
         description=(
             f"Your Guess: **{guess}**\n"
-            f"Result: **{result}**\n\n"
+            f"Result: **{res}**\n\n"
             f"{"🎉 You won!" if won else '❌ You lost!'}"
         ),
         color=discord.Color.green() if won else discord.Color.red(),
