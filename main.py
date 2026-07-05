@@ -1133,6 +1133,7 @@ async def create(ctx):
     economy.insert_one({
         "user_id": ctx.author.id,
         "balance": 1000,
+        "daily": int(time.time()),
         "created_at": int(time.time())
     })
 
@@ -1179,6 +1180,59 @@ async def balance(ctx, member: discord.Member = None):
     )
     await ctx.reply(embed=embed)
         
+
+@bank.command()
+async def daily(ctx):
+    result = economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description="You don't have an active bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if result['daily'] > int(time.time()): 
+        embed=discord.Embed(
+            title="It's too early!",
+            description=f"You have already redeemed your reward.\nYou can redeem again <t:{result['daily']}:R>.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    amount = random.randint(500,1000)
+
+    economy.update_one(
+        {
+            "user_id": ctx.author.id
+        },
+        {
+            "$inc":{
+                "balance": amount
+            },
+            "$set": {
+                "daily": (int(time.time()) + 86400)
+            }
+        }
+    )
+    embed=discord.Embed(
+        title=f"🤑 | {amount} creditted to your account!",
+        description=f"Your current balance is `{result['balance'] + amount}` coins.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    await ctx.reply(embed=embed)
+
+
 
 # ----- SLASH COMMANDS FROM HERE -----
 
@@ -2225,6 +2279,7 @@ async def create_sl(interaction: discord.Interaction):
     economy.insert_one({
         "user_id": interaction.user.id,
         "balance": 1000,
+        "daily": int(time.time()),
         "created_at": int(time.time())
     })
 
@@ -2260,6 +2315,57 @@ async def balance_sl(interaction: discord.Interaction, member: discord.Member = 
     embed=discord.Embed(
         title=f"💸 | {member}'s Balance",
         description=f"{member} currently have `{result['balance']}` coins in account.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+@bank_sl.command(name="daily", description="Claim your daily reward!")
+async def daily_sl(interaction: discord.Interaction):
+    result = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description="You don't have an active bank account. Use `/bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    if result['daily'] > int(time.time()):
+        embed=discord.Embed(
+            title="It's too early!",
+            description=f"You have already redeemed your reward.\nYou can redeem again <t:{result['daily']}:R>.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    amount = random.randint(500,1000)
+
+    economy.update_one(
+        {
+            "user_id": interaction.user.id
+        },
+        {
+            "$inc": {
+                "balance": amount
+            },
+            "$set": {
+                "daily": (int(time.time() + 86400))
+            }
+        }
+    )
+    embed=discord.Embed(
+        title=f"🤑 | {amount} creditted to your account!",
+        description=f"Your current balance is `{result['balance'] + amount}` coins.",
         color=discord.Color.green(),
         timestamp=discord.utils.utcnow()
     )
