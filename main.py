@@ -1158,7 +1158,7 @@ async def fact(ctx):
 async def bank(ctx):
     embed = discord.Embed(
         title="Available Bank Commands",
-        description="`!bank create`\n`!bank balance`\n`!bank daily`",
+        description="`!bank create`\n`!bank balance`\n`!bank daily`\n`!bank send`",
         color=discord.Color.gold(),
         timestamp=discord.utils.utcnow()
     )
@@ -1282,6 +1282,105 @@ async def daily(ctx):
     )
     await ctx.reply(embed=embed)
 
+@bank.command()
+async def send(ctx, user: discord.Member = None, amount: int = None):
+    if user == None or amount == None:
+        embed=discord.Embed(
+            title="Invalid command usage",
+            description="Usage: `!bank send <@user> <amount>",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if user == ctx.author:
+        embed=discord.Embed(
+            title="Invalid Beneficiary",
+            description="You cannot transfer coins to yourself. Please add another beneficiary.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    result = economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description="You don't have an active bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if result['balance'] < amount:
+        embed=discord.Embed(
+            title="Insufficient Balance",
+            description="You don't have enough balance in your account.\nPlease try again with a smaller amount.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    result1 = economy.find_one({
+        "user_id": user.id
+    })
+
+    if not result1:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description=f"{user.mention} does not have an active bank account.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    economy.update_one(
+        {
+            "user_id": ctx.author.id
+        },
+        {
+            "$inc": {
+                "balance": -amount
+            }
+        }
+    )
+    economy.update_one(
+        {
+            "user_id": user.id
+        },
+        {
+            "$inc": {
+                "balance": amount
+            }
+        }
+    )
+    embed=discord.Embed(
+        title=f"Transfer Successful",
+        description=f"{amount} coins has been transferred successfully to {user.mention}.\nThank you for banking with us!",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    embed1 = discord.Embed(
+        title=f"Account Creditted!",
+        description=f"{amount} coins are creditted to your account via Account Transfer from {ctx.author.mention}.\nThank you for banking with us!",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed1.set_footer(
+        text="Lumen Banking Services",
+        icon_url=bot.user.display_avatar.url
+    )
+
+    await user.send(embed=embed1)
+    await ctx.reply(embed=embed)
 
 
 # ----- SLASH COMMANDS FROM HERE -----
@@ -2475,7 +2574,98 @@ async def daily_sl(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed)
 
+@bank_sl.command(name="send", description="Transfer coins to your friends!")
+async def send_sl(interaction: discord.Interaction, user: discord.Member, amount: int):
+    if user == interaction.user:
+        embed=discord.Embed(
+            title="Invalid Beneficiary",
+            description="You cannot transfer coins to yourself. Please add another beneficiary.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    result = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description="You don't have an active bank account. Use `/bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    if result['balance'] < amount:
+        embed=discord.Embed(
+            title="Insufficient Balance",
+            description="You don't have enough balance in your account.\nPlease try again with a smaller amount.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    result1 = economy.find_one({
+        "user_id": user.id
+    })
+
+    if not result1:
+        embed=discord.Embed(
+            title="Account Not Found!",
+            description=f"{user.mention} does not have an active bank account.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed)
+
+    economy.update_one(
+        {
+            "user_id": interaction.user.id
+        },
+        {
+            "$inc": {
+                "balance": -amount
+            }
+        }
+    )
+    economy.update_one(
+        {
+            "user_id": user.id
+        },
+        {
+            "$inc": {
+                "balance": amount
+            }
+        }
+    )
+    embed=discord.Embed(
+        title=f"Transfer Successful",
+        description=f"{amount} coins has been transferred successfully to {user.mention}.\nThank you for banking with us!",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    embed1=discord.Embed(
+        title=f"Account Creditted!",
+        description=f"{amount} coins are creditted to your account via Account Transfer from {interaction.user.mention}.\nThank you for banking with us.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed1.set_footer(
+        text="Lumen Banking Services",
+        icon_url=bot.user.display_avatar.url
+    )
+
+    await user.send(embed=embed1)
+    await interaction.response.send_message(embed=embed)
+
 bot.tree.add_command(bank_sl)
+
 
 # ----- Error Handling -----
 @bot.event
