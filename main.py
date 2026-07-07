@@ -20,6 +20,70 @@ afkdb = db['afk']
 TOKEN = os.getenv("BOT_TOKEN")
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), help_command=None)
 
+# ----- DISCORD VIEW (CLASS) -----
+class ConfirmView(discord.ui.View):
+    def __init__(self, userid: int):
+        super().__init__(timeout=60)
+
+        self.userid = userid
+        self.message = None
+        self.value = None
+
+    async def check(self, interaction: discord.Interaction):
+        if interaction.user.id != self.userid:
+            embed=discord.Embed(
+                description="This confirmation is not for you!",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False 
+        return True
+
+    @discord.ui.button(
+        label="Confirm",
+        style=discord.ButtonStyle.danger,
+        emoji="✅"
+    )
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.value = True
+
+        for item in self.children:
+            item.disabled=True
+
+        await interaction.response.edit_message(view=self)
+
+        self.stop()
+
+    @discord.ui.button(
+        label="Cancel",
+        style=discord.ButtonStyle.secondary,
+        emoji="❌"
+    )
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.value=False
+
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(
+            content="❌ Cancelled",
+            embed=None,
+            view=self
+        )
+
+        self.stop()
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled = True
+
+        if self.message:
+            await self.message.edit(view=self)
+
+        self.stop()
+
+
+
 # ----- PREFIX COMMANDS FROM HERE -----
 # -- UTILITY --
 @bot.command(name="help")
@@ -1382,6 +1446,64 @@ async def send(ctx, user: discord.Member = None, amount: int = None):
     await user.send(embed=embed1)
     await ctx.reply(embed=embed)
 
+@bank.command()
+async def deactivate(ctx):
+    result = economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    embed = discord.Embed(
+        title="Deactivate Bank Account",
+        description="You will lose permanent access to your bank account.\nAre you sure? This action **cannot** be undone.",
+        color=discord.Color.red(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    view = ConfirmView(ctx.author.id)
+
+    view.message = await ctx.reply(
+        embed=embed,
+        view=view
+    )
+
+    await view.wait()
+
+    if view.value is None:
+        return
+
+    if not view.value:
+        return
+
+    economy.delete_one({
+        "user_id": ctx.author.id
+    })
+
+    embed=discord.Embed(
+        title="Account Deleted!",
+        description="Your bank account is deleted successfully.\nPlease leave your feedback in our support server.\nRun `!bank create` to open a new bank account.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    await ctx.send(embed=embed)
+
 
 # ----- SLASH COMMANDS FROM HERE -----
 
@@ -2663,6 +2785,64 @@ async def send_sl(interaction: discord.Interaction, user: discord.Member, amount
 
     await user.send(embed=embed1)
     await interaction.response.send_message(embed=embed)
+
+@bank_sl.command(name="deactivate", description="Deactivate your account permanently.")
+async def deactivate_sl(interaction: discord.Interaction):
+    result = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    embed=discord.Embed(
+        title="Deactivate Bank Account",
+        description="You will lose permanent access to your bank account.\nAre you sure? This action **cannot** be undone.",
+        color=discord.Color.red(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    
+    view = ConfirmView(interaction.user.id)
+
+    await interaction.response.send_message(embed=embed, view=view)
+    view.message = await interaction.original_response()
+
+    await view.wait()
+
+    if view.value is None:
+        return
+
+    if not view.value:
+        return
+
+    economy.delete_one({
+        "user_id": interaction.user.id
+    })
+
+    embed=discord.Embed(
+        title="Account Deleted!",
+        description="Your bank account is deleted successfully.\nPlease leave your feedback in our support server.\nRun `/bank create` to open a new bank account.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+
+    await interaction.followup.send(embed=embed)
+
+
 
 bot.tree.add_command(bank_sl)
 
