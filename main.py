@@ -16,6 +16,7 @@ client = MongoClient(os.getenv("MONGO_URI"))
 db = client['lumen']
 economy = db['economy']
 afkdb = db['afk']
+countdown_db = db['countdown']
 
 TOKEN = os.getenv("BOT_TOKEN")
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), help_command=None)
@@ -29,14 +30,15 @@ class ConfirmView(discord.ui.View):
         self.message = None
         self.value = None
 
-    async def check(self, interaction: discord.Interaction):
+    async def interaction_check(self, interaction: discord.Interaction):
         if interaction.user.id != self.userid:
             embed=discord.Embed(
                 description="This confirmation is not for you!",
                 color=discord.Color.red()
             )
             await interaction.response.send_message(embed=embed, ephemeral=True)
-            return False 
+            return False
+
         return True
 
     @discord.ui.button(
@@ -1250,6 +1252,14 @@ async def create(ctx):
         "daily": int(time.time()),
         "created_at": int(time.time())
     })
+    countdown_db.update_one({
+        "user_id": ctx.author.id
+    },
+    {
+        "$setOnInsert": {
+            "rob": int(time.time())
+        }
+    }, upsert=True)
 
     embed=discord.Embed(
         title="🏦 | Account Created!",
@@ -1445,6 +1455,162 @@ async def send(ctx, user: discord.Member = None, amount: int = None):
 
     await user.send(embed=embed1)
     await ctx.reply(embed=embed)
+
+@bank.command(aliases=['steal'])
+async def rob(ctx, user: discord.Member = None):
+    if user is None:
+        embed=discord.Embed(
+            title="Invalid command usage.",
+            description="Usage: !bank rob <@member>",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if user.id == ctx.author.id:
+        embed=discord.Embed(
+            description="You cannot rob yourself.",
+            color=discord.Color.red()
+        )
+        return await ctx.reply(embed=embed)
+
+    result = economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    result1 = economy.find_one({
+        "user_id": user.id
+    })
+
+    if not result1:
+        embed=discord.Embed(
+            title="Account not found!",
+            description=f"{user} does not have an active bank account.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    countd = countdown_db.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if countd["rob"] > int(time.time()):
+
+        embed=discord.Embed(
+            title="Slow Down!",
+            description=f"You are too fast. This command is on cooldown.\nYou will be able to use this command again <t:{countd['rob']}:R>.",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if result1['balance'] < 500:
+        embed=discord.Embed(
+            description=f"{user} does not have enough money to rob.",
+            color=discord.Color.red()
+        )
+        return await ctx.reply(embed=embed)
+
+    countdown_db.update_one({
+        "user_id": ctx.author.id
+    }, {
+        "$set": {
+            "rob": (int(time.time()) + 7200)
+        }
+    })
+
+    chance = random.randint(1, 100)
+
+    if chance <= 45:
+        amount = random.randint(int(result1['balance'] * 0.20), int(result1['balance'] * 0.40))
+
+        economy.update_one(
+            {
+                "user_id": ctx.author.id
+            },
+            {
+                "$inc": {
+                    'balance': amount
+                }
+            }
+        )
+
+        economy.update_one(
+            {
+                "user_id": user.id
+            },
+            {
+                "$inc": {
+                    "balance": -amount
+                }
+            }
+        )
+
+        embed=discord.Embed(
+            title="Successful Robbery",
+            description=f"You robbed {user.mention}\nStolen: **{amount}** coins",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(
+            text=f"Requested by {ctx.author}",
+            icon_url=ctx.author.display_avatar.url
+        )
+
+        embed1 = discord.Embed(
+            title="You have been robbed!",
+            description=f"{ctx.author.mention} stole **{amount}** coins from you.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed1.set_footer(icon_url=user.display_avatar.url)
+
+        await user.send(embed=embed1)
+        return await ctx.reply(embed=embed)
+    
+    elif chance <= 70:
+        embed=discord.Embed(
+            title="Robbery Failed!",
+            description="You couldn't steal anything but managed to run away!",
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        return await ctx.reply(embed=embed)
+
+    else:
+        amount = (result['balance'] * 0.20)
+
+        economy.update_one(
+            {
+                "user_id": ctx.author.id
+            },
+            {
+                "$inc": {
+                    "balance": -amount
+                }
+            }
+        )
+
+        embed=discord.Embed(
+            title="Arrested",
+            description=f"You were fined by the police!\nFine: **{amount}** coins.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    
 
 @bank.command()
 async def deactivate(ctx):
@@ -2604,6 +2770,18 @@ async def create_sl(interaction: discord.Interaction):
         "created_at": int(time.time())
     })
 
+    countdown_db.update_one(
+        {
+            "user_id": interaction.user.id
+        },
+        {
+            "$setOnInsert": {
+                "rob": int(time.time())
+            }
+        },
+        upsert=True
+    )
+
     embed = discord.Embed(
         title="🏦 | Account Created!",
         description="Account has been successfully created!\nAs a welcome gift, we have added `1000` Coins to your bank balance.\nThank you for trusting us.",
@@ -2785,6 +2963,152 @@ async def send_sl(interaction: discord.Interaction, user: discord.Member, amount
 
     await user.send(embed=embed1)
     await interaction.response.send_message(embed=embed)
+
+@bank_sl.command(name="rob", description="Rob other users, but don't just get caught!")
+async def rob_sl(interaction: discord.Interaction, user: discord.Member):
+    if user.id == interaction.user.id:
+        embed=discord.Embed(
+            description="You cannot rob yourself.",
+            color=discord.Color.red()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    result = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    result1 = economy.find_one({
+        "user_id": user.id
+    })
+
+    if not result1:
+        embed=discord.Embed(
+            title="Account not found!",
+            description=f"{user} does not have an active bank account.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    countd = countdown_db.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if countd['rob'] > int(time.time()):
+        embed=discord.Embed(
+            title="Slow Down!",
+            description=f"You are too fast. This command is on cooldown.\nYou will be able to use this command again <t:{countd['rob']}:R>.",
+            color=discord.Color.gold(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    if result1['balance'] < 500:
+        embed=discord.Embed(
+            description=f"{user} does not have enough money to rob.",
+            color=discord.Color.red()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    countdown_db.update_one({
+        "user_id": interaction.user.id
+    }, {
+        "$set": {
+            "rob": (int(time.time()) + 7200)
+        }
+    })
+
+    chance = random.randint(1, 100)
+
+    if chance <= 45:
+        amount = random.randint(int(result1['balance'] * 0.20), int(result1['balance'] * 0.40))
+
+        economy.update_one(
+            {
+                "user_id": interaction.user.id
+            },
+            {
+                "$inc": {
+                    'balance': amount
+                }
+            }
+        )
+
+        economy.update_one(
+            {
+                "user_id": user.id
+            },
+            {
+                "$inc": {
+                    "balance": -amount
+                }
+            }
+        )
+
+        embed=discord.Embed(
+            title="Successful Robbery",
+            description=f"You robbed {user.mention}\nStolen: **{amount}** coins",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed.set_footer(
+            text=f"Requested by {interaction.user}",
+            icon_url=interaction.user.display_avatar.url
+        )
+
+        embed1 = discord.Embed(
+            title="You have been robbed!",
+            description=f"{interaction.user.mention} stole **{amount}** coins from you.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        embed1.set_footer(icon_url=user.display_avatar.url)
+
+        await user.send(embed=embed1)
+        return await interaction.response.send_message(embed=embed)
+    
+    elif chance <= 70:
+        embed=discord.Embed(
+            title="Robbery failed!",
+            description="You couldn't steal anything but managed to run away!",
+            color=discord.Color.orange(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        return await interaction.response.send_message(embed=embed)
+
+    else:
+        amount = (result['balance'] * 0.20)
+
+        economy.update_one(
+            {
+                "user_id": interaction.user.ID
+            },
+            {
+                "$inc": {
+                    "balance": -amount
+                }
+            }
+        )
+
+        embed=discord.Embed(
+            title="Arrested",
+            description=f"You were fined by the police!\nFine: **{amount}** coins.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        return await interaction.response.send_message(embed=embed)
+
 
 @bank_sl.command(name="deactivate", description="Deactivate your account permanently.")
 async def deactivate_sl(interaction: discord.Interaction):
