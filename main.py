@@ -21,6 +21,46 @@ countdown_db = db['countdown']
 TOKEN = os.getenv("BOT_TOKEN")
 bot = commands.Bot(command_prefix="!", intents=discord.Intents.all(), help_command=None)
 
+
+# Reference Only.
+jobs_dict = {
+    "developer": {
+        "name": "Software Developer",
+        "emoji": "💻",
+        "salary": (800, 1500)
+    },
+    "doctor": {
+        "name": "Doctor",
+        "emoji": "🩺",
+        "salary": (750, 1400)
+    },
+    "chef": {
+        "name": "Chef",
+        "emoji": "👨‍🍳",
+        "salary": (500, 1000)
+    },
+    "police": {
+        "name": "Police Officer",
+        "emoji": "👮",
+        "salary": (600, 1100)
+    },
+    "taxi": {
+        "name": "Taxi Driver",
+        "emoji": "🚕",
+        "salary": (400, 700)
+    },
+    "maid": {
+        "name": "Maid",
+        "emoji": "🧹",
+        "salary": (400, 800)
+    },
+    "construction": {
+        "name": "Construction Worker",
+        "emoji": "👷",
+        "salary": (500, 800)
+    }
+}
+
 # ----- DISCORD VIEW (CLASS) -----
 class ConfirmView(discord.ui.View):
     def __init__(self, userid: int):
@@ -84,6 +124,100 @@ class ConfirmView(discord.ui.View):
 
         self.stop()
 
+
+class JobView(discord.ui.Select):
+    def __init__(self, userid: int):
+        super().__init__(timeout=60)
+
+        self.userid = userid
+        self.message = None
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        if interaction.user.id != self.userid:
+            embed=discord.Embed(
+                description="This menu is not for you.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
+
+        return True
+
+    @discord.ui.select(
+        placeholder="Choose your profession.",
+        min_values=1,
+        max_values=1,
+        options=[
+            discord.SelectOption(
+                label="Software Developer",
+                value="developer",
+                emoji="💻"
+            ),
+            discord.SelectOption(
+                label="Doctor",
+                value="doctor",
+                emoji="🩺"
+            ),
+            discord.SelectOption(
+                label="Chef",
+                value="chef",
+                emoji="👨‍🍳"
+            ),
+            discord.SelectOption(
+                label="Police Officer",
+                value="police",
+                emoji="👮"
+            ),
+            discord.SelectOption(
+                label="Taxi Driver",
+                value="taxi",
+                emoji="🚕"
+            ),
+            discord.SelectOption(
+                label="Maid",
+                value="maid",
+                emoji="🧹"
+            ),
+            discord.SelectOption(
+                label="Construction Worker",
+                value="construction",
+                emoji="👷"
+            ),
+        ]
+    )
+    async def select_job(self, interaction: discord.Interaction, select: discord.ui.Select):
+        job = select.values[0]
+
+        economy.update_one({
+            "user_id": userid
+        }, {
+            "$set": {
+                "job": job
+            }
+        })
+
+        countdown_db.update_one(
+            {"user_id": userid},
+            {"$set": {
+                "job": int(time.time())
+            }}
+        )
+
+        embed=discord.Embed(
+            title="Job Selected!",
+            description=f"You are now a **{jobs_dict[job]['name']}**!\nStart Working everyday!",
+            color=discord.Color.green(),
+            timestamp=discord.utils.utcnow()
+        )
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            embed=embed, view=self
+        )
+
+        self.stop()
 
 
 # ----- PREFIX COMMANDS FROM HERE -----
@@ -1249,6 +1383,7 @@ async def create(ctx):
     economy.insert_one({
         "user_id": ctx.author.id,
         "balance": 1000,
+        "job": None,
         "daily": int(time.time()),
         "created_at": int(time.time())
     })
@@ -1257,7 +1392,9 @@ async def create(ctx):
     },
     {
         "$setOnInsert": {
-            "rob": int(time.time())
+            "rob": int(time.time()),
+            "daily": int(time.time()),
+            "job": 0
         }
     }, upsert=True)
 
@@ -2766,6 +2903,7 @@ async def create_sl(interaction: discord.Interaction):
     economy.insert_one({
         "user_id": interaction.user.id,
         "balance": 1000,
+        "job": None,
         "daily": int(time.time()),
         "created_at": int(time.time())
     })
@@ -2776,7 +2914,9 @@ async def create_sl(interaction: discord.Interaction):
         },
         {
             "$setOnInsert": {
-                "rob": int(time.time())
+                "rob": int(time.time()),
+                "daily": int(time.time()),
+                "job": 0
             }
         },
         upsert=True
