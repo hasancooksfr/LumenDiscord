@@ -27,37 +27,86 @@ jobs_dict = {
     "developer": {
         "name": "Software Developer",
         "emoji": "💻",
-        "salary": (800, 1500)
+        "salary": (800, 1500),
+        "messages": [
+            "You committed +285 changes!",
+            "Just drank coffee xD",
+            "Solved a major bug!",
+            "Added bugs (probably features)",
+            "You deployed a successful update.",
+            "You survived a Friday deployment."
+        ]
     },
     "doctor": {
         "name": "Doctor",
         "emoji": "🩺",
-        "salary": (750, 1400)
+        "salary": (750, 1400),
+        "messages": [
+            "You just saved life of a patient",
+            "You replaced a patient's teeth",
+            "Did a very complicated surgery successfully."
+        ]
     },
     "chef": {
         "name": "Chef",
         "emoji": "👨‍🍳",
-        "salary": (500, 1000)
+        "salary": (500, 1000),
+        "messages": [
+            "You just cooked dinner for house-party!",
+            "Just usual routine",
+            "Cooking some Italian for boss",
+            "Boss organised a party and you cooked."
+        ]
     },
     "police": {
         "name": "Police Officer",
         "emoji": "👮",
-        "salary": (600, 1100)
+        "salary": (600, 1100),
+        "messages": [
+            "You arrested a notorious criminal.",
+            "You safely directed heavy traffic.",
+            "You solved a burglary case.",
+            "You rescued a stranded family.",
+            "You helped reunite a lost child with their parents."
+        ]
     },
     "taxi": {
         "name": "Taxi Driver",
         "emoji": "🚕",
-        "salary": (400, 700)
+        "salary": (400, 700),
+        "messages": [
+            "You drove passengers across the city.",
+            "A customer left you a generous tip.",
+            "You completed 25 rides today.",
+            "You helped a tourist find famous landmarks.",
+            "You avoided traffic and arrived on time.",
+            "You safely drove passengers through heavy rain.",
+            "You received a five-star rating."
+        ]
     },
     "maid": {
         "name": "Maid",
         "emoji": "🧹",
-        "salary": (400, 800)
+        "salary": (400, 800),
+        "messages": [
+            "You cleaned an entire house until it sparkled.",
+            "You organized every room perfectly.",
+            "You helped a family prepare for an important celebration.",
+            "You removed every speck of dust from the furniture.",
+            "You washed a mountain of dishes without breaking a single one."
+        ]
     },
     "construction": {
         "name": "Construction Worker",
         "emoji": "👷",
-        "salary": (500, 800)
+        "salary": (500, 800),
+        "messages": [
+            "You helped build the foundation of a new home.",
+            "You carried heavy materials all day.",
+            "You installed steel beams for a skyscraper.",
+            "You safely operated construction equipment.",
+            "You repaired a damaged bridge."
+        ]
     }
 }
 
@@ -125,7 +174,7 @@ class ConfirmView(discord.ui.View):
         self.stop()
 
 
-class JobView(discord.ui.Select):
+class JobView(discord.ui.View):
     def __init__(self, userid: int):
         super().__init__(timeout=60)
 
@@ -189,7 +238,7 @@ class JobView(discord.ui.Select):
         job = select.values[0]
 
         economy.update_one({
-            "user_id": userid
+            "user_id": self.userid
         }, {
             "$set": {
                 "job": job
@@ -197,7 +246,7 @@ class JobView(discord.ui.Select):
         })
 
         countdown_db.update_one(
-            {"user_id": userid},
+            {"user_id": self.userid},
             {"$set": {
                 "job": int(time.time())
             }}
@@ -218,6 +267,13 @@ class JobView(discord.ui.Select):
         )
 
         self.stop()
+
+    async def on_timeout(self):
+        for child in self.children:
+            child.disabled = True
+
+        if self.message:
+            await self.message.edit(view=self)
 
 
 # ----- PREFIX COMMANDS FROM HERE -----
@@ -1807,6 +1863,127 @@ async def deactivate(ctx):
 
     await ctx.send(embed=embed)
 
+# -- JOB --
+@bot.group(invoke_without_command=True)
+async def job(ctx):
+    embed = discord.Embed(
+        title="Available Job Commands",
+        description="`!job apply`\n`!job work`\n`!job resign`",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    await ctx.reply(embed=embed)
+
+@job.command()
+async def apply(ctx):
+    result = economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found",
+            description="You don't have an active bank account. Use `!bank create` to create one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if result['job']:
+        embed=discord.Embed(
+            title="You are already hired!",
+            description="You are a working professional and cannot apply for another job before resigning. Use `!job resign` to resign from current job.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    embed=discord.Embed(
+        title="Apply for a job!",
+        description="Select a job from dropdown to apply for same.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    view = JobView(ctx.author.id)
+    view.message = await ctx.reply(embed=embed, view=view)
+
+@job.command()
+async def work(ctx):
+    result = economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if not result['job']:
+        embed=discord.Embed(
+            title="You are unemployed.",
+            description="You aren't working anywhere. Use `!job apply` to apply for one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    cooldown = countdown_db.find_one({"user_id": ctx.author.id})
+    if cooldown['job'] > int(time.time()):
+        embed=discord.Embed(
+            title="Cool Down!",
+            description=f"You can only work once in 24 hours. Please try again <t:{cooldown['job']}:R>",
+            color=discord.Color.yellow(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    job = jobs_dict[result['job']]
+    payout = random.randint(*job['salary'])
+
+    economy.update_one(
+        {
+            "user_id": ctx.author.id
+        },
+        {
+            "$inc": {
+                "balance": payout
+            }
+        }
+    )
+
+    countdown_db.update_one(
+        {
+            "user_id": ctx.author.id
+        },
+        {
+            "$set": {
+                "job": (int(time.time()) + 86400)
+            }
+        }
+    )
+
+    message = random.choice(job['messages'])
+    embed=discord.Embed(
+        title="Work Report",
+        description=f"Job: {job['name']}\n{message}\n\nPayout: `{payout}` coins.",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    await ctx.reply(embed=embed)
+
 
 # ----- SLASH COMMANDS FROM HERE -----
 
@@ -3306,10 +3483,128 @@ async def deactivate_sl(interaction: discord.Interaction):
 
     await interaction.followup.send(embed=embed)
 
-
-
 bot.tree.add_command(bank_sl)
 
+# -- Job --
+job_sl = app_commands.Group(
+    name="job",
+    description="Job related commands"
+)
+
+@job_sl.command(name="apply", description="Apply for a job to start working!")
+async def apply_sl(interaction: discord.Interaction):
+    result = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found",
+            description="You don't have an active bank account. Use `!bank create` to create one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    if result['job']:
+        embed=discord.Embed(
+            title="You are already hired!",
+            description="You are a working professional and cannot apply for another job. Use `/job resign` to resign from your current job.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+    
+    embed=discord.Embed(
+        title="Apply for a job!",
+        description="Select a job from dropdown to apply for same.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+
+    view = JobView(interaction.user.id)
+    await interaction.response.send_message(embed=embed, view=view)
+    view.message = await interaction.original_response()
+
+@job_sl.command(name="work", description="Work and earn big amounts of coins!")
+async def work_sl(interaction: discord.Interaction):
+    result = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    if not result['job']:
+        embed=discord.Embed(
+            title="You are unemployed.",
+            description="You aren't working anywhere. Use `!job apply` to apply for one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    cooldown = countdown_db.find_one({
+        "user_id": interaction.user.id
+    })
+    if cooldown['job'] > int(time.time()):
+        embed=discord.Embed(
+            title="Cool Down!",
+            description=f"You can only work once in 24 hours. Please try again <t:{cooldown['job']}:R>",
+            color=discord.Color.yellow(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    job = jobs_dict[result['job']]
+    payout = random.randint(*job['salary'])
+
+    economy.update_one(
+        {
+            "user_id": interaction.user.id
+        },
+        {
+            "$inc": {
+                "balance": payout
+            }
+        }
+    )
+
+    countdown_db.update_one(
+        {
+            "user_id": interaction.user.id
+        },
+        {
+            "$set": {
+                "job": (int(time.time()) + 86400)
+            }
+        }
+    )
+
+    message = random.choice(job['messages'])
+    embed=discord.Embed(
+        title="Work Report",
+        description=f"Job: {job['name']}\n{message}\n\nPayout: `{payout}` coins.",
+        color=discord.Color.gold(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+    await interaction.response.send_message(embed=embed)
+
+bot.tree.add_command(job_sl)
 
 # ----- Error Handling -----
 @bot.event
