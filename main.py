@@ -174,6 +174,67 @@ class ConfirmView(discord.ui.View):
         self.stop()
 
 
+class ResignView(discord.ui.View):
+    def __init__(self, userid: int):
+        super().__init__(timeout=60)
+
+        self.userid = userid
+        self.message = None
+        self.value = None
+
+    async def interaction_check(self, interaction: discord.Interaction):
+        if interaction.user.id != self.userid:
+            embed=discord.Embed(
+                description="This menu is not for you.",
+                color=discord.Color.red()
+            )
+            await interaction.response.send_message(embed=embed, ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(
+        label="Confirm",
+        style=discord.ButtonStyle.danger,
+        emoji="✅"
+    )
+    async def confirm(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.value = True
+
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(view=self)
+
+        self.stop()
+
+    @discord.ui.button(
+        label="Cancel",
+        style=discord.ButtonStyle.secondary,
+        emoji="❌"
+    )
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        self.value = False
+
+        for item in self.children:
+            item.disabled = True
+
+        await interaction.response.edit_message(
+            content="❌ Cancelled",
+            embed=None,
+            view=self
+        )
+
+        self.stop()
+
+    async def on_timeout(self):
+        for item in self.children:
+            item.disabled=True
+
+        if self.message:
+            await self.message.edit(view=self)
+
+        self.stop()
+
 class JobView(discord.ui.View):
     def __init__(self, userid: int):
         super().__init__(timeout=60)
@@ -1984,6 +2045,71 @@ async def work(ctx):
     )
     await ctx.reply(embed=embed)
 
+@job.command()
+async def resign(ctx):
+    result =  economy.find_one({
+        "user_id": ctx.author.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account. Use `!bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    if not result['job']:
+        embed=discord.Embed(
+            title="You are unemployed!",
+            description="You aren't working anywhere. Use `!job apply` to apply for one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await ctx.reply(embed=embed)
+
+    embed=discord.Embed(
+        title="Confirm Resignation",
+        description=f"Current Role: {jobs_dict[result['job']]['name']}\nDo you want to resign?\n**This action cannot be undone.**",
+        color=discord.Color.red(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+    view = ResignView(ctx.author.id)
+    view.message = await ctx.reply(embed=embed, view=view)
+
+    await view.wait()
+
+    if not view.value:
+        return
+
+    if view.value is None:
+        return
+
+    economy.update_one({
+        "user_id": ctx.author.id
+    }, {
+        "$set": {
+            "job": None
+        }
+    })
+
+    embed=discord.Embed(
+        title="Resignation Accepted!",
+        description="You have successfully resigned from your current role.\nYou are now unemployed and can apply for a job using `!job apply`.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {ctx.author}",
+        icon_url=ctx.author.display_avatar.url
+    )
+
+    await ctx.send(embed=embed)
 
 # ----- SLASH COMMANDS FROM HERE -----
 
@@ -3605,6 +3731,77 @@ async def work_sl(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 bot.tree.add_command(job_sl)
+
+@job_sl.command(name="resign", description="Provide a resignation and look for better opportunities!")
+async def resign_sl(interaction: discord.Interaction):
+    result = economy.find_one({
+        "user_id": interaction.user.id
+    })
+
+    if not result:
+        embed=discord.Embed(
+            title="Account not found!",
+            description="You don't have an active bank account. Use `/bank create` to open one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    if not result['job']:
+        embed=discord.Embed(
+            title="You are unemployed!",
+            description="You aren't working anywehre. Use `!job apply` to apply for one.",
+            color=discord.Color.red(),
+            timestamp=discord.utils.utcnow()
+        )
+        return await interaction.response.send_message(embed=embed, ephemeral=True)
+
+    embed=discord.Embed(
+        title="Confirm Resignation",
+        description=f"Current Role: {jobs_dict[result['job']]['name']}\nDo you want to resign?\n**This action cannot be undone.**",
+        color=discord.Color.red(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+
+    view = ResignView(interaction.user.id)
+    await interaction.response.send_message(embed=embed, view=view)
+    view.message = await interaction.original_response()
+
+    await view.wait()
+
+    if not view.value:
+        return
+
+    if view.value is None:
+        return
+
+    economy.update_one(
+        {
+            "user_id": interaction.user.id
+        },
+        {
+            "$set": {
+                "job": None
+            }
+        }
+    )
+
+    embed=discord.Embed(
+        title="Resignation Accepted!",
+        description="You have successfully resigned from your current role.\nYou are now unemployed and can apply for a job using `/job apply`.",
+        color=discord.Color.green(),
+        timestamp=discord.utils.utcnow()
+    )
+    embed.set_footer(
+        text=f"Requested by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
+    )
+
+    await interaction.followup.send(embed=embed)
 
 # ----- Error Handling -----
 @bot.event
